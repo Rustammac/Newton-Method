@@ -1,9 +1,12 @@
-// ========== Мини-фильтр консоли (чтобы не засоряли сообщения локализации Desmos) ==========
+// ------------------------
+// script.js — Newton + Desmos
+// ------------------------
+
+// ========== Мини-фильтр консоли Desmos ==========
 (function filterDesmosConsole() {
   const origWarn = console.warn.bind(console);
   console.warn = function (...args) {
     const joined = args.join(" ");
-    // Отфильтровать сообщения локализации/форматирования Desmos (частые и неважные)
     if (
       typeof joined === "string" &&
       (joined.includes("Couldn't find message for key graphing-calculator") ||
@@ -24,7 +27,7 @@ const calculator = Desmos.GraphingCalculator(calcRoot, {
   zoomButtons: true,
 });
 
-// Утилита: безопасно очищает предыдущие выражения по id-шникам
+// ========== Утилита для очистки ==========
 function clearDesmosIds(ids) {
   ids.forEach((id) => {
     try {
@@ -33,15 +36,26 @@ function clearDesmosIds(ids) {
   });
 }
 
-let funcInput = document.getElementById("function").value.trim();
+// ========== Функция проверки сходимости ==========
+function checkConvergenceCondition(funcString, x0) {
+  try {
+    const nodeF = math.parse(funcString);
+    const f = nodeF.compile();
+    const fPrime = math.derivative(nodeF, "x").compile();
+    const fDoublePrime = math
+      .derivative(math.derivative(nodeF, "x"), "x")
+      .compile();
 
-// Если пользователь ввёл "что-то = что-то"
-if (funcInput.includes("=")) {
-  const parts = funcInput.split("=");
-  if (parts.length === 2) {
-    funcInput = `(${parts[0]}) - (${parts[1]})`;
-  } else {
-    throw new Error('Некорректное уравнение. Используйте только одно "=".');
+    const fx = f.evaluate({ x: x0 });
+    const fpx = fPrime.evaluate({ x: x0 });
+    const fppx = fDoublePrime.evaluate({ x: x0 });
+
+    const condition = Math.abs(fx * fppx) < Math.pow(fpx, 2);
+
+    return { condition, fx, fpx, fppx };
+  } catch (err) {
+    console.error("Ошибка при проверке сходимости:", err.message);
+    return null;
   }
 }
 
@@ -54,44 +68,68 @@ form.addEventListener("submit", function (e) {
   e.preventDefault();
   resultBox.innerHTML = "";
 
+  // === Получение данных от пользователя ===
   let funcInput = document.getElementById("function").value.trim();
   const x0 = parseFloat(document.getElementById("x0").value);
   const epsilon = parseFloat(document.getElementById("epsilon").value);
-
-  if (funcInput.includes("=")) {
-    const parts = funcInput.split("=");
-    if (parts.length === 2) {
-      funcInput = `(${parts[0]}) - (${parts[1]})`;
-    } else {
-      throw new Error("Некорректное уравнение. Используйте только одно '='.");
-    }
-  }
-  funcInput = funcInput
-    .replace(/^y\s*=\s*/i, "")
-    .replace(/^f\s*\(x\)\s*=\s*/i, "");
 
   if (!funcInput) {
     resultBox.innerHTML = `<p style="color:#ff6b6b">Введите функцию.</p>`;
     return;
   }
-
-  if (!funcInput) {
-    resultBox.innerHTML = `<p style="color:${"#ff6b6b"}">Введите функцию.</p>`;
+  if (isNaN(x0) || isNaN(epsilon) || epsilon <= 0) {
+    resultBox.innerHTML = `<p style="color:#ff6b6b">Некорректные x₀ или ε.</p>`;
     return;
   }
-  if (isNaN(x0) || isNaN(epsilon) || epsilon <= 0) {
-    resultBox.innerHTML = `<p style="color:${"#ff6b6b"}">Некорректные x₀ или ε.</p>`;
-    return;
+
+  // === Обработка уравнения вида f(x)=0 ===
+  if (funcInput.includes("=")) {
+    const parts = funcInput.split("=");
+    if (parts.length === 2) {
+      funcInput = `(${parts[0]}) - (${parts[1]})`;
+    } else {
+      resultBox.innerHTML = `<p style="color:#ff6b6b">Используйте только одно "=".</p>`;
+      return;
+    }
+  }
+
+  funcInput = funcInput
+    .replace(/^y\s*=\s*/i, "")
+    .replace(/^f\s*\(x\)\s*=\s*/i, "");
+
+  // === Проверка условия сходимости ===
+  const conv = checkConvergenceCondition(funcInput, x0);
+  if (conv) {
+    if (conv.condition) {
+      resultBox.innerHTML += `
+        <p style="color:green"><b>✅ Условие сходимости выполняется:</b></p>
+        <p>|f(x₀)·f''(x₀)| < [f'(x₀)]²</p>
+        <p>f(x₀) = ${conv.fx.toExponential(
+          3
+        )}, f'(x₀) = ${conv.fpx.toExponential(
+        3
+      )}, f''(x₀) = ${conv.fppx.toExponential(3)}</p>
+      `;
+    } else {
+      resultBox.innerHTML += `
+        <p style="color:#ff6b6b"><b>⚠️ Условие сходимости не выполняется при x₀ = ${x0}.</b></p>
+        <p>Метод Ньютона может не сойтись.</p>
+        <p>f(x₀) = ${conv.fx.toExponential(
+          3
+        )}, f'(x₀) = ${conv.fpx.toExponential(
+        3
+      )}, f''(x₀) = ${conv.fppx.toExponential(3)}</p>
+      `;
+    }
   }
 
   try {
-    // Парсим функцию и её производную через math.js
+    // === Парсинг функции и производной ===
     const nodeF = math.parse(funcInput);
     const f = nodeF.compile();
-    const nodeFp = math.derivative(nodeF, "x");
-    const fPrime = nodeFp.compile();
+    const fPrime = math.derivative(nodeF, "x").compile();
 
-    // Метод Ньютона
+    // === Метод Ньютона ===
     let xn = x0;
     const maxIter = 100;
     const iterPoints = [xn];
@@ -102,30 +140,24 @@ form.addEventListener("submit", function (e) {
       const fx = f.evaluate({ x: xn });
       const fpx = fPrime.evaluate({ x: xn });
 
-      if (!isFinite(fx) || !isFinite(fpx)) {
-        throw new Error(
-          "Значение функции или производной стало нечисловым (Infinity/NaN)."
-        );
-      }
-      if (Math.abs(fpx) < 1e-14) {
-        throw new Error(
-          "Производная слишком близка к нулю — метод не применим в этой точке."
-        );
-      }
+      if (!isFinite(fx) || !isFinite(fpx))
+        throw new Error("Infinity/NaN в функции или производной.");
+      if (Math.abs(fpx) < 1e-14)
+        throw new Error("Производная слишком близка к нулю.");
 
       xn1 = xn - fx / fpx;
       iterPoints.push(xn1);
 
       if (Math.abs(xn1 - xn) < epsilon) {
-        iter++; // считаем текущую итерацию как выполненную
+        iter++;
         break;
       }
       xn = xn1;
     }
 
-    // Вывод результатов
+    // === Вывод результатов ===
     const fxAtRoot = f.evaluate({ x: xn1 });
-    resultBox.innerHTML = `
+    resultBox.innerHTML += `
       <p><b>f(x):</b> ${escapeHtml(funcInput)}</p>
       <p><b>x₀:</b> ${x0}</p>
       <p><b>Найденный корень:</b> x ≈ ${Number(xn1).toFixed(10)}</p>
@@ -133,47 +165,27 @@ form.addEventListener("submit", function (e) {
       <p><b>Итераций:</b> ${iter}</p>
     `;
 
-    // ========== Построение графика в Desmos ==========
-    // Удаляем старые выражения
-    const knownIds = [
-      "func",
-      "axis",
-      "root",
-      "iterLine",
-      "iterPoint",
-      "iterPoint0",
-    ];
-    // также удалим все предыдущие iterPointN
+    // === Построение графика Desmos ===
+    const knownIds = ["func", "axis", "root", "iterLine"];
     for (let i = 0; i < 200; i++) knownIds.push("iterP" + i);
     clearDesmosIds(knownIds);
 
-    // Функция
-    // Прямо подставим текст функции в y=...; math-style — Desmos понимает многие записи, но аккуратно
     calculator.setExpression({ id: "func", latex: `y=${funcInput}` });
-
-    // Ось x
     calculator.setExpression({
       id: "axis",
       latex: "y=0",
       color: Desmos.Colors.GRAY,
     });
-
-    // Точка корня
     calculator.setExpression({
       id: "root",
       latex: `(${xn1},0)`,
       color: Desmos.Colors.RED,
     });
 
-    // Итерации: точки (x_n, f(x_n)) и линии, соединяющие их с проекцией на ось (для визуала касательных)
-    // Добавим линии между итерациями (x_n, f(x_n)) -> (x_{n+1}, 0) визуально
-    // И отдельно нарисуем точки на графике
-    const iterCoords = iterPoints.map((xi) => {
-      const yi = f.evaluate({ x: xi });
-      return { x: xi, y: yi };
-    });
-
-    // Точки итераций
+    const iterCoords = iterPoints.map((xi) => ({
+      x: xi,
+      y: f.evaluate({ x: xi }),
+    }));
     iterCoords.forEach((pt, idx) => {
       calculator.setExpression({
         id: "iterP" + idx,
@@ -182,21 +194,6 @@ form.addEventListener("submit", function (e) {
       });
     });
 
-    // Линии между точкой и её проекцией на ось (горизонтальная затем вертикальная — для наглядности)
-    // Здесь рисуем вертикальную линию от (x_n, f(x_n)) до (x_n, 0), а затем точку следующего x
-    iterCoords.forEach((pt, idx) => {
-      // вертикальная линия
-      calculator.setExpression({
-        id: `iterV${idx}`,
-        latex: `{(x, y) : x = ${pt.x} and y <= ${pt.y} and y >= 0}`,
-        color: Desmos.Colors.BLACK, // тонкая/невидимая, можно убрать
-      });
-    });
-
-    // Также для визуала соединим точки итераций линией-путём
-    const xsLine = iterCoords.map((p) => p.x);
-    const ysLine = iterCoords.map((p) => p.y);
-    // Desmos принимает список точек как [(x1,y1),(x2,y2),...]
     const pairsLatex =
       "[" + iterCoords.map((p) => `(${p.x},${p.y})`).join(",") + "]";
     calculator.setExpression({
@@ -205,7 +202,6 @@ form.addEventListener("submit", function (e) {
       color: Desmos.Colors.ORANGE,
     });
 
-    // Подстраиваем вид: центрируем граф по найденному корню
     calculator.setMathBounds({
       left: xn1 - 6,
       right: xn1 + 6,
@@ -213,13 +209,13 @@ form.addEventListener("submit", function (e) {
       top: 6,
     });
   } catch (err) {
-    resultBox.innerHTML = `<p style="color:${"#ff6b6b"}"><b>Ошибка:</b> ${escapeHtml(
+    resultBox.innerHTML += `<p style="color:#ff6b6b"><b>Ошибка:</b> ${escapeHtml(
       err.message
     )}</p>`;
   }
 });
 
-// Сброс: удалить выражения и очистить результат
+// === Сброс формы ===
 resetBtn.addEventListener("click", function () {
   const idsToClear = ["func", "axis", "root", "iterLine"];
   for (let i = 0; i < 200; i++) idsToClear.push("iterP" + i);
@@ -230,7 +226,7 @@ resetBtn.addEventListener("click", function () {
   document.getElementById("epsilon").value = "";
 });
 
-// Небольшая утилита — экранирование HTML для вывода ошибок/функций
+// === Утилита экранирования HTML ===
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
