@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Метод Ньютона</title>
+    <link rel="stylesheet" href="./css/style.css" />
+    <!-- math.js (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/mathjs@11.11.0/lib/browser/math.js"></script>
+    <!-- Desmos v1.11 (публичный учебный ключ) -->
+    <script src="https://www.desmos.com/api/v1.11/calculator.js?apiKey=dcb31709b452b1cf9dc26972add0fda6"></script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Метод Ньютона</h1>
+
+      <form id="newtonForm" class="form">
+        <label for="function">f(x)</label>
+        <input
+          id="function"
+          type="text"
+          placeholder="например: x^3 - x - 2"
+          required
+        />
+
+        <label for="x0">Начальное приближение x₀</label>
+        <input
+          id="x0"
+          type="number"
+          step="any"
+          placeholder="например: 1.5"
+          required
+        />
+
+        <label for="epsilon">Точность ε</label>
+        <input
+          id="epsilon"
+          type="number"
+          step="any"
+          placeholder="например: 0.0001"
+          required
+        />
+
+        <div class="row">
+          <button type="submit" class="btn">Рассчитать</button>
+          <button id="resetBtn" type="button" class="btn btn-light">
+            Сброс
+          </button>
+        </div>
+      </form>
+
+      <div id="result" class="result"></div>
+
+      <h2>График (Desmos)</h2>
+      <div id="calculator" class="calculator"></div>
+    </div>
+
+    <script src="./js/app.js"></script>
+  </body>
+</html>
